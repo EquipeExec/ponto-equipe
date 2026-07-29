@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Ponto da equipe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --ink:#1C2430;
+    --bg:#EEF2F1;
+    --card:#FFFFFF;
+    --teal:#0E6E5D;
+    --teal-dark:#0A5346;
+    --amber:#E8A33D;
+    --amber-dark:#B87A22;
+    --rust:#C1502E;
+    --line:#DCE3E1;
+    --muted:#6B7680;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',sans-serif;
+    min-height:100vh;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 20px 60px;}
+  header{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:14px 20px;background:var(--ink);color:#fff;border-radius:12px;
+    margin-bottom:24px;flex-wrap:wrap;gap:10px;
+  }
+  header .brand{font-weight:600;letter-spacing:.04em;font-size:14px;text-transform:uppercase;}
+  header .clock{font-size:20px;font-weight:500;}
+  header .who{font-size:13px;color:#B9C2C0;cursor:pointer;text-decoration:underline;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;}
+  .grid{display:grid;grid-template-columns:280px 1fr;gap:20px;}
+  @media(max-width:760px){.grid{grid-template-columns:1fr;}}
+  .punch-zone{display:flex;flex-direction:column;align-items:center;text-align:center;gap:16px;}
+  .punch-btn{
+    width:180px;height:180px;border-radius:50%;border:6px solid var(--teal-dark);
+    background:var(--teal);color:#fff;font-family:'IBM Plex Mono',monospace;
+    font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 4px 0 var(--teal-dark);transition:transform .08s, box-shadow .08s;
+    padding:10px;
+  }
+  .punch-btn:active{transform:translateY(4px);box-shadow:0 0 0 var(--teal-dark);}
+  .punch-btn.done{background:var(--muted);border-color:#555;box-shadow:0 4px 0 #555;cursor:default;}
+  .punch-btn.saida{background:var(--rust);border-color:#8C3A20;box-shadow:0 4px 0 #8C3A20;}
+  .punch-btn.saida:active{box-shadow:0 0 0 #8C3A20;}
+  .stamp{font-size:13px;color:var(--muted);min-height:18px;}
+  .timeline{width:100%;text-align:left;margin-top:6px;}
+  .timeline h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;font-weight:600;}
+  .tl-item{display:flex;justify-content:space-between;font-size:14px;padding:7px 0;border-bottom:1px solid var(--line);}
+  .tl-item:last-child{border-bottom:none;}
+  .tl-item .time{font-family:'IBM Plex Mono',monospace;color:var(--teal-dark);font-weight:500;}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 8px;border-bottom:2px solid var(--line);font-weight:600;}
+  td{padding:10px 8px;border-bottom:1px solid var(--line);}
+  td.mono, th.mono{font-family:'IBM Plex Mono',monospace;}
+  .status-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:500;}
+  .p-working{background:#DEEFE9;color:var(--teal-dark);}
+  .p-break{background:#FBEBD3;color:var(--amber-dark);}
+  .p-done{background:#EDEDEA;color:var(--muted);}
+  .p-notstarted{background:#F4E7E2;color:var(--rust);}
+  .section-title{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin:0 0 14px;}
+  .id-screen{max-width:420px;margin:60px auto;text-align:center;}
+  .id-screen h1{font-size:20px;margin-bottom:6px;}
+  .id-screen p{color:var(--muted);font-size:14px;margin-bottom:22px;}
+  select,input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:10px;background:#fff;}
+  .btn{width:100%;padding:11px;border-radius:8px;border:none;background:var(--teal);color:#fff;font-weight:600;font-size:14px;cursor:pointer;}
+  .btn:hover{background:var(--teal-dark);}
+  .divider{color:var(--muted);font-size:12px;margin:16px 0;}
+  .hint{font-size:12px;color:var(--muted);margin-top:16px;}
+  .empty{color:var(--muted);font-size:13px;padding:16px 0;text-align:center;}
+  .admin-link{font-size:13px;color:#B9C2C0;cursor:pointer;text-decoration:underline;}
+  .row-actions{display:flex;gap:12px;align-items:center;}
+  .icon-btn{background:none;border:none;color:var(--rust);cursor:pointer;font-size:15px;padding:0;font-family:inherit;line-height:1;vertical-align:middle;}
+  .icon-btn.text{font-size:13px;text-decoration:underline;}
+  .icon-btn.neutral{color:var(--muted);}
+  .admin-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  .inline-form{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  .inline-form input{margin-bottom:0;flex:1;min-width:140px;}
+  .inline-form button{width:auto;padding:10px 16px;white-space:nowrap;}
+  .admin-section{margin-bottom:28px;}
+  .err{color:var(--rust);font-size:13px;margin:-4px 0 12px;min-height:16px;}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+// ===== CONFIGURAÇÃO DO FIREBASE =====
+// Cole aqui o objeto de configuração do seu projeto Firebase
+// (Console do Firebase > Configurações do projeto > Seus apps > Config)
+const firebaseConfig = {
+  apiKey: "AIzaSyDvxIf-aLIVVIbTiEcd1MIU7LMZYtKhYXE",
+  authDomain: "registro-de-ponto-2a062.firebaseapp.com",
+  projectId: "registro-de-ponto-2a062",
+  storageBucket: "registro-de-ponto-2a062.firebasestorage.app",
+  messagingSenderId: "962067504394",
+  appId: "1:962067504394:web:62017a50a9208a255aeef3"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+// ===== FIM DA CONFIGURAÇÃO =====
+
+const app = document.getElementById('app');
+
+const TYPES = {
+  entrada: 'Entrada',
+  inicio_intervalo: 'Início do almoço',
+  fim_intervalo: 'Fim do almoço',
+  saida: 'Saída'
+};
+const NEXT_ACTION = { none:'entrada', entrada:'inicio_intervalo', inicio_intervalo:'fim_intervalo', fim_intervalo:'saida', saida:null };
+const BTN_LABEL = { entrada:'Bater entrada', inicio_intervalo:'Iniciar almoço', fim_intervalo:'Encerrar almoço', saida:'Bater saída' };
+
+function todayKey(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function fmtTime(iso){ return new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function fmtClock(){ return new Date().toLocaleTimeString('pt-BR'); }
+function fmtDatePretty(){ return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}); }
+
+async function getRoster(){
+  try{ const snap = await db.collection('config').doc('roster').get(); return snap.exists ? (snap.data().list||[]) : []; }
+  catch(e){ console.error(e); return []; }
+}
+async function saveRoster(list){ try{ await db.collection('config').doc('roster').set({ list }); }catch(e){ console.error(e); } }
+function rosterNames(roster){ return roster.map(r=>r.name); }
+async function getPunches(dateKey){
+  try{ const snap = await db.collection('punches').doc(dateKey).get(); return snap.exists ? (snap.data().entries||[]) : []; }
+  catch(e){ console.error(e); return []; }
+}
+async function savePunches(dateKey, list){ try{ await db.collection('punches').doc(dateKey).set({ entries: list }); }catch(e){ console.error(e); } }
+let currentUser = null;
+function getMyName(){ return currentUser; }
+function setMyName(name){ currentUser = name; }
+
+async function listPunchDates(){
+  try{
+    const snap = await db.collection('punches').get();
+    const dates = snap.docs.map(d=>d.id);
+    dates.sort((a,b)=> b.localeCompare(a));
+    return dates;
+  }catch(e){ console.error(e); return []; }
+}
+
+const ADMIN_NAMES = ['Marcela Avelar', 'Laryssa Fulgêncio'];
+
+async function getAdminPins(){
+  try{ const snap = await db.collection('config').doc('admin_pins').get(); return snap.exists ? (snap.data().pins||{}) : {}; }
+  catch(e){ console.error(e); return {}; }
+}
+async function saveAdminPins(map){ try{ await db.collection('config').doc('admin_pins').set({ pins: map }); }catch(e){ console.error(e); } }
+
+function onlyDigits(v){ return (v||'').replace(/\D/g,''); }
+function wirePinOnly(input){
+  input.addEventListener('input', ()=>{ input.value = onlyDigits(input.value).slice(0,4); });
+}
+
+function hoursBetween(startIso, endIso){ return (new Date(endIso) - new Date(startIso)) / 3600000; }
+function fmtHours(h){
+  if(h == null || isNaN(h)) return '—';
+  const hh = Math.floor(h);
+  const mm = Math.round((h-hh)*60);
+  return hh+'h'+String(mm).padStart(2,'0');
+}
+
+function computeStatus(punches, name){
+  const mine = punches.filter(p=>p.name===name).sort((a,b)=>new Date(a.time)-new Date(b.time));
+  const last = mine.length ? mine[mine.length-1] : null;
+  return { mine, lastType: last ? last.type : 'none' };
+}
+function computeWorked(mine){
+  const byType = {};
+  mine.forEach(p=>{ byType[p.type]=p.time; });
+  if(!byType.entrada) return null;
+  const end = byType.saida || new Date().toISOString();
+  let total = hoursBetween(byType.entrada, end);
+  if(byType.inicio_intervalo && byType.fim_intervalo){
+    total -= hoursBetween(byType.inicio_intervalo, byType.fim_intervalo);
+  } else if(byType.inicio_intervalo && !byType.fim_intervalo){
+    total -= hoursBetween(byType.inicio_intervalo, new Date().toISOString());
+  }
+  return total;
+}
+
+async function renderStartScreen(startTab){
+  const tab = startTab || 'colab';
+  const roster = await getRoster();
+  const names = rosterNames(roster);
+
+  app.innerHTML = `
+    <div class="id-screen">
+      <h1>Ponto da equipe</h1>
+      <p>Identifique-se para continuar.</p>
+      <div class="inline-form" style="justify-content:center;margin-bottom:20px;">
+        <button class="btn" id="tabColab" style="width:auto;background:${tab==='colab'?'var(--teal)':'var(--card)'};color:${tab==='colab'?'#fff':'var(--ink)'};border:1px solid var(--line);">Colaborador</button>
+        <button class="btn" id="tabAdmin" style="width:auto;background:${tab==='admin'?'var(--teal)':'var(--card)'};color:${tab==='admin'?'#fff':'var(--ink)'};border:1px solid var(--line);">Administrador</button>
+      </div>
+      <div id="tabBody"></div>
+    </div>
+  `;
+  document.getElementById('tabColab').onclick = ()=> renderStartScreen('colab');
+  document.getElementById('tabAdmin').onclick = ()=> renderStartScreen('admin');
+
+  const body = document.getElementById('tabBody');
+
+  if(tab === 'colab'){
+    if(!names.length){
+      body.innerHTML = `<div class="empty">Nenhum colaborador cadastrado ainda. Peça para um administrador te cadastrar no painel admin.</div>`;
+      return;
+    }
+    body.innerHTML = `
+      <select id="colabName">
+        <option value="">Selecione seu nome</option>
+        ${names.map(n=>`<option value="${n}">${n}</option>`).join('')}
+      </select>
+      <input id="colabPin" type="password" placeholder="Sua senha de 4 dígitos" maxlength="4" inputmode="numeric">
+      <div class="err" id="colabErr"></div>
+      <button class="btn" id="doColabLogin">Entrar</button>
+    `;
+    wirePinOnly(document.getElementById('colabPin'));
+    document.getElementById('doColabLogin').onclick = async ()=>{
+      const name = document.getElementById('colabName').value;
+      const pin = document.getElementById('colabPin').value;
+      const errEl = document.getElementById('colabErr');
+      if(!name){ errEl.textContent = 'Selecione seu nome.'; return; }
+      const fresh = await getRoster();
+      const match = fresh.find(r=>r.name===name && r.pin===pin);
+      if(!match){ errEl.textContent = 'Senha incorreta.'; return; }
+      await setMyName(name);
+      renderMain();
+    };
+    return;
+  }
+
+  const pins = await getAdminPins();
+  body.innerHTML = `
+    <select id="adminName">
+      <option value="">Selecione seu nome</option>
+      ${ADMIN_NAMES.map(n=>`<option value="${n}">${n}</option>`).join('')}
+    </select>
+    <div id="adminPinArea"></div>
+    <div class="err" id="adminErr"></div>
+    <button class="btn" id="doAdminLogin" style="background:var(--ink);">Entrar</button>
+  `;
+  const adminNameSel = document.getElementById('adminName');
+  function renderPinArea(){
+    const name = adminNameSel.value;
+    const pinArea = document.getElementById('adminPinArea');
+    if(!name){ pinArea.innerHTML = ''; return; }
+    if(!pins[name]){
+      pinArea.innerHTML = `
+        <p class="hint" style="margin:0 0 10px;">Primeiro acesso de ${name}: crie uma senha de 4 dígitos.</p>
+        <input id="adminPinNew" type="password" placeholder="Crie uma senha de 4 dígitos" maxlength="4" inputmode="numeric">
+        <input id="adminPinNew2" type="password" placeholder="Confirme a senha" maxlength="4" inputmode="numeric">
+      `;
+      wirePinOnly(document.getElementById('adminPinNew'));
+      wirePinOnly(document.getElementById('adminPinNew2'));
+    } else {
+      pinArea.innerHTML = `<input id="adminPinLogin" type="password" placeholder="Senha de 4 dígitos" maxlength="4" inputmode="numeric">`;
+      wirePinOnly(document.getElementById('adminPinLogin'));
+    }
+  }
+  adminNameSel.onchange = renderPinArea;
+  document.getElementById('doAdminLogin').onclick = async ()=>{
+    const name = adminNameSel.value;
+    const errEl = document.getElementById('adminErr');
+    if(!name){ errEl.textContent = 'Selecione seu nome.'; return; }
+    const freshPins = await getAdminPins();
+    if(!freshPins[name]){
+      const p1 = document.getElementById('adminPinNew').value;
+      const p2 = document.getElementById('adminPinNew2').value;
+      if(p1.length!==4){ errEl.textContent = 'A senha precisa ter 4 dígitos.'; return; }
+      if(p1!==p2){ errEl.textContent = 'As senhas não coincidem.'; return; }
+      freshPins[name] = p1;
+      await saveAdminPins(freshPins);
+      renderAdmin();
+      return;
+    }
+    const pin = document.getElementById('adminPinLogin').value;
+    if(freshPins[name] !== pin){ errEl.textContent = 'Senha incorreta.'; return; }
+    renderAdmin();
+  };
+}
+
+async function renderMain(){
+  const myName = getMyName();
+  if(!myName){ renderStartScreen('colab'); return; }
+
+  const dateKey = todayKey();
+  let punches = await getPunches(dateKey);
+  const roster = await getRoster();
+  const names = rosterNames(roster);
+
+  const { mine, lastType } = computeStatus(punches, myName);
+  const nextAction = NEXT_ACTION[lastType];
+
+  app.innerHTML = `
+    <header>
+      <div class="brand">Ponto da equipe</div>
+      <div class="clock mono" id="liveClock">${fmtClock()}</div>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div class="admin-link" id="openAdmin">Painel admin</div>
+        <div class="who" id="switchId">${myName} · trocar</div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card punch-zone">
+        <div style="font-size:12px;color:var(--muted);text-transform:capitalize;">${fmtDatePretty()}</div>
+        ${nextAction ? `
+          <button class="punch-btn ${nextAction==='saida'?'saida':''}" id="punchBtn">${BTN_LABEL[nextAction]}</button>
+        ` : `
+          <div class="punch-btn done">Dia encerrado</div>
+        `}
+        <div class="stamp" id="stampMsg"></div>
+        <div class="timeline">
+          <h3>Seu dia</h3>
+          ${mine.length ? mine.map(p=>`
+            <div class="tl-item"><span>${TYPES[p.type]}</span><span class="time">${fmtTime(p.time)}</span></div>
+          `).join('') : `<div class="empty">Nenhum registro ainda hoje.</div>`}
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="section-title">Equipe hoje</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th class="mono">Entrada</th>
+              <th class="mono">Almoço</th>
+              <th class="mono">Saída</th>
+              <th class="mono">Horas</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="teamBody"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('switchId').onclick = ()=>{
+    setMyName(null);
+    renderStartScreen('colab');
+  };
+
+  document.getElementById('openAdmin').onclick = ()=> renderStartScreen('admin');
+
+  const btn = document.getElementById('punchBtn');
+  if(btn){
+    btn.onclick = async ()=>{
+      btn.disabled = true;
+      const entry = { name: myName, type: nextAction, time: new Date().toISOString() };
+      const fresh = await getPunches(dateKey);
+      fresh.push(entry);
+      await savePunches(dateKey, fresh);
+      document.getElementById('stampMsg').textContent = TYPES[nextAction]+' registrada às '+fmtTime(entry.time);
+      renderMain();
+    };
+  }
+
+  fillTeamTable(dateKey, names);
+
+  clearInterval(window.__clockTimer);
+  window.__clockTimer = setInterval(()=>{
+    const c = document.getElementById('liveClock');
+    if(c) c.textContent = fmtClock();
+  }, 1000);
+
+  clearInterval(window.__refreshTimer);
+  window.__refreshTimer = setInterval(async ()=>{
+    const p = await getPunches(dateKey);
+    fillTeamTable(dateKey, names, p);
+  }, 15000);
+}
+
+async function fillTeamTable(dateKey, names, punchesPreloaded){
+  const punches = punchesPreloaded || await getPunches(dateKey);
+  const tbody = document.getElementById('teamBody');
+  if(!tbody) return;
+  if(!names.length){
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">Nenhum membro cadastrado ainda.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = names.map(name=>{
+    const { mine, lastType } = computeStatus(punches, name);
+    const byType = {}; mine.forEach(p=>byType[p.type]=p.time);
+    const worked = computeWorked(mine);
+    let pill;
+    if(lastType==='none') pill = '<span class="status-pill p-notstarted">não iniciou</span>';
+    else if(lastType==='inicio_intervalo') pill = '<span class="status-pill p-break">em almoço</span>';
+    else if(lastType==='saida') pill = '<span class="status-pill p-done">encerrado</span>';
+    else pill = '<span class="status-pill p-working">trabalhando</span>';
+    const intervalo = byType.inicio_intervalo ? (fmtTime(byType.inicio_intervalo)+'–'+(byType.fim_intervalo?fmtTime(byType.fim_intervalo):'...')) : '—';
+    return `<tr>
+      <td>${name}</td>
+      <td class="mono">${byType.entrada?fmtTime(byType.entrada):'—'}</td>
+      <td class="mono">${intervalo}</td>
+      <td class="mono">${byType.saida?fmtTime(byType.saida):'—'}</td>
+      <td class="mono">${fmtHours(worked)}</td>
+      <td>${pill}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function renderAdmin(){
+  clearInterval(window.__clockTimer);
+  clearInterval(window.__refreshTimer);
+  const roster = await getRoster();
+  const names = rosterNames(roster);
+  const adminPins = await getAdminPins();
+  let dates = await listPunchDates();
+  const today = todayKey();
+  if(!dates.includes(today)) dates = [today, ...dates];
+
+  const allPunches = {};
+  for(const d of dates){ allPunches[d] = await getPunches(d); }
+
+  function dayLabel(d){
+    const dt = new Date(d+'T00:00:00');
+    let label = dt.toLocaleDateString('pt-BR',{weekday:'long', day:'2-digit', month:'long', year:'numeric'});
+    if(d === today) label += ' · hoje';
+    return label;
+  }
+
+  const currentMonth = today.slice(0,7);
+
+  function monthlyTotals(monthKey){
+    const totals = {};
+    names.forEach(n=>totals[n]=0);
+    Object.keys(allPunches).forEach(d=>{
+      if(!d.startsWith(monthKey)) return;
+      const punches = allPunches[d];
+      const names = [...new Set(punches.map(p=>p.name))];
+      names.forEach(name=>{
+        const st = computeStatus(punches, name);
+        const worked = computeWorked(st.mine);
+        if(worked && !isNaN(worked) && worked>0){
+          totals[name] = (totals[name]||0) + worked;
+        }
+      });
+    });
+    return totals;
+  }
+
+  function renderMonthlyRows(monthKey){
+    const totals = monthlyTotals(monthKey);
+    const names = Object.keys(totals).sort((a,b)=> totals[b]-totals[a]);
+    if(!names.length) return '<tr><td colspan="2" class="empty">Nenhum colaborador cadastrado.</td></tr>';
+    return names.map(n=>'<tr><td>'+n+'</td><td class="mono">'+fmtHours(totals[n])+'</td></tr>').join('');
+  }
+
+  app.innerHTML = `
+    <header>
+      <div class="brand">Painel admin</div>
+      <div class="clock mono">${fmtClock()}</div>
+      <div class="admin-link" id="backBtn" style="color:#fff;">Voltar ao ponto</div>
+    </header>
+
+    <div class="card admin-section">
+      <p class="section-title">Resumo de horas do mês</p>
+      <div class="inline-form">
+        <input type="month" id="monthPicker" value="${currentMonth}" style="max-width:200px;">
+      </div>
+      <table>
+        <thead><tr><th>Colaborador</th><th class="mono">Total de horas</th></tr></thead>
+        <tbody id="monthlyBody">${renderMonthlyRows(currentMonth)}</tbody>
+      </table>
+      <p class="hint">Soma automática das horas trabalhadas (descontando o almoço) em todos os dias do mês selecionado. Dias em andamento contam até o horário atual.</p>
+    </div>
+
+    <div class="card admin-section">
+      <p class="section-title">Todos os registros, por dia</p>
+      <p class="hint" style="margin:-4px 0 16px;">Os horários são gravados automaticamente no momento em que a pessoa bate o ponto. Nenhum colaborador pode digitar ou alterar data e horário — só o administrador pode excluir um registro aqui.</p>
+      ${dates.map((d,i)=>{
+        const dayPunches = allPunches[d]||[];
+        const byName = {};
+        dayPunches.forEach((p,idx)=>{
+          if(!byName[p.name]) byName[p.name] = {};
+          byName[p.name][p.type] = { time:p.time, idx };
+        });
+        const names = Object.keys(byName).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+        function cell(name, type){
+          const entry = byName[name][type];
+          if(!entry) return '<td class="mono">—</td>';
+          return '<td class="mono">'+fmtTime(entry.time)+' <button class="icon-btn" data-date="'+d+'" data-idx="'+entry.idx+'" title="Excluir registro">×</button></td>';
+        }
+        return '<details '+(i===0?'open':'')+' style="margin-bottom:10px;border:1px solid var(--line);border-radius:10px;padding:4px 14px;">'+
+          '<summary style="cursor:pointer;padding:10px 0;font-weight:500;text-transform:capitalize;">'+dayLabel(d)+' <span style="color:var(--muted);font-weight:400;text-transform:none;">· '+names.length+' colaborador'+(names.length===1?'':'es')+'</span></summary>'+
+          '<table style="margin-bottom:10px;"><thead><tr><th>Nome</th><th class="mono">Entrada</th><th class="mono">Início do almoço</th><th class="mono">Fim do almoço</th><th class="mono">Saída</th></tr></thead><tbody>'+
+          (names.length ? names.map(name=>
+            '<tr><td>'+name+'</td>'+cell(name,'entrada')+cell(name,'inicio_intervalo')+cell(name,'fim_intervalo')+cell(name,'saida')+'</tr>'
+          ).join('') : '<tr><td colspan="5" class="empty">Nenhum registro nesse dia.</td></tr>')+
+          '</tbody></table></details>';
+      }).join('')}
+    </div>
+
+    <div class="card admin-section">
+      <p class="section-title">Equipe cadastrada</p>
+      ${roster.length ? roster.map(r=>`
+        <div class="row-actions" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);">
+          <span>${r.name}</span>
+          <button class="icon-btn text" data-remove="${r.name}">Remover</button>
+        </div>
+      `).join('') : `<div class="empty">Ninguém cadastrado ainda.</div>`}
+      <div class="inline-form" style="margin-top:14px;">
+        <input id="newMember" placeholder="Nome da nova pessoa">
+        <input id="newMemberPin" type="password" placeholder="Senha de 4 dígitos" maxlength="4" inputmode="numeric" style="max-width:180px;">
+        <button class="btn" id="addMember">Adicionar</button>
+      </div>
+      <div class="err" id="memberErr"></div>
+      <p class="hint">Só o administrador cadastra colaboradores aqui. Cada pessoa usa seu nome e essa senha para bater ponto.</p>
+    </div>
+
+    <div class="card admin-section">
+      <p class="section-title">Administradores</p>
+      ${ADMIN_NAMES.map(n=>`
+        <div class="row-actions" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);">
+          <span>${n}</span>
+          <span style="color:var(--muted);font-size:12px;">${adminPins[n] ? 'senha definida' : 'ainda sem senha (definida no primeiro acesso)'}</span>
+        </div>
+      `).join('')}
+      <p class="hint">O acesso ao painel admin é limitado a Marcela Avelar e Laryssa Fulgêncio. Não é possível adicionar outros administradores.</p>
+    </div>
+  `;
+
+  document.getElementById('backBtn').onclick = renderMain;
+
+  document.getElementById('monthPicker').oninput = (e)=>{
+    document.getElementById('monthlyBody').innerHTML = renderMonthlyRows(e.target.value);
+  };
+
+  document.querySelectorAll('button[data-idx]').forEach(b=>{
+    b.onclick = async ()=>{
+      const d = b.dataset.date;
+      const idx = Number(b.dataset.idx);
+      const fresh = await getPunches(d);
+      fresh.splice(idx,1);
+      await savePunches(d, fresh);
+      renderAdmin();
+    };
+  });
+
+  document.querySelectorAll('button[data-remove]').forEach(b=>{
+    b.onclick = async ()=>{
+      const name = b.dataset.remove;
+      if(!confirm('Remover '+name+' da equipe? O histórico de ponto dessa pessoa não será apagado.')) return;
+      const list = (await getRoster()).filter(r=>r.name!==name);
+      await saveRoster(list);
+      renderAdmin();
+    };
+  });
+
+  wirePinOnly(document.getElementById('newMemberPin'));
+  document.getElementById('addMember').onclick = async ()=>{
+    const val = document.getElementById('newMember').value.trim();
+    const pin = document.getElementById('newMemberPin').value;
+    const errEl = document.getElementById('memberErr');
+    if(!val){ errEl.textContent = 'Digite o nome.'; return; }
+    if(pin.length!==4){ errEl.textContent = 'A senha precisa ter 4 dígitos.'; return; }
+    const list = await getRoster();
+    if(list.some(r=>r.name===val)){ errEl.textContent = 'Esse nome já está cadastrado.'; return; }
+    list.push({ name: val, pin });
+    await saveRoster(list);
+    renderAdmin();
+  };
+}
+
+renderMain();
+</script>
+</body>
+</html>

@@ -300,8 +300,6 @@ async function renderMain(){
 
   const dateKey = todayKey();
   let punches = await getPunches(dateKey);
-  const roster = await getRoster();
-  const names = rosterNames(roster);
 
   const { mine, lastType } = computeStatus(punches, myName);
   const nextAction = NEXT_ACTION[lastType];
@@ -316,38 +314,19 @@ async function renderMain(){
       </div>
     </header>
 
-    <div class="grid">
-      <div class="card punch-zone">
-        <div style="font-size:12px;color:var(--muted);text-transform:capitalize;">${fmtDatePretty()}</div>
-        ${nextAction ? `
-          <button class="punch-btn ${nextAction==='saida'?'saida':''}" id="punchBtn">${BTN_LABEL[nextAction]}</button>
-        ` : `
-          <div class="punch-btn done">Dia encerrado</div>
-        `}
-        <div class="stamp" id="stampMsg"></div>
-        <div class="timeline">
-          <h3>Seu dia</h3>
-          ${mine.length ? mine.map(p=>`
-            <div class="tl-item"><span>${TYPES[p.type]}</span><span class="time">${fmtTime(p.time)}</span></div>
-          `).join('') : `<div class="empty">Nenhum registro ainda hoje.</div>`}
-        </div>
-      </div>
-
-      <div class="card">
-        <p class="section-title">Equipe hoje</p>
-        <table>
-          <thead>
-            <tr>
-              <th>Nome</th>
-              <th class="mono">Entrada</th>
-              <th class="mono">Almoço</th>
-              <th class="mono">Saída</th>
-              <th class="mono">Horas</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="teamBody"></tbody>
-        </table>
+    <div class="card punch-zone" style="max-width:320px;margin:0 auto;">
+      <div style="font-size:12px;color:var(--muted);text-transform:capitalize;">${fmtDatePretty()}</div>
+      ${nextAction ? `
+        <button class="punch-btn ${nextAction==='saida'?'saida':''}" id="punchBtn">${BTN_LABEL[nextAction]}</button>
+      ` : `
+        <div class="punch-btn done">Dia encerrado</div>
+      `}
+      <div class="stamp" id="stampMsg"></div>
+      <div class="timeline">
+        <h3>Seu dia</h3>
+        ${mine.length ? mine.map(p=>`
+          <div class="tl-item"><span>${TYPES[p.type]}</span><span class="time">${fmtTime(p.time)}</span></div>
+        `).join('') : `<div class="empty">Nenhum registro ainda hoje.</div>`}
       </div>
     </div>
   `;
@@ -372,48 +351,11 @@ async function renderMain(){
     };
   }
 
-  fillTeamTable(dateKey, names);
-
   clearInterval(window.__clockTimer);
   window.__clockTimer = setInterval(()=>{
     const c = document.getElementById('liveClock');
     if(c) c.textContent = fmtClock();
   }, 1000);
-
-  clearInterval(window.__refreshTimer);
-  window.__refreshTimer = setInterval(async ()=>{
-    const p = await getPunches(dateKey);
-    fillTeamTable(dateKey, names, p);
-  }, 15000);
-}
-
-async function fillTeamTable(dateKey, names, punchesPreloaded){
-  const punches = punchesPreloaded || await getPunches(dateKey);
-  const tbody = document.getElementById('teamBody');
-  if(!tbody) return;
-  if(!names.length){
-    tbody.innerHTML = `<tr><td colspan="6" class="empty">Nenhum membro cadastrado ainda.</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = names.map(name=>{
-    const { mine, lastType } = computeStatus(punches, name);
-    const byType = {}; mine.forEach(p=>byType[p.type]=p.time);
-    const worked = computeWorked(mine);
-    let pill;
-    if(lastType==='none') pill = '<span class="status-pill p-notstarted">não iniciou</span>';
-    else if(lastType==='inicio_intervalo') pill = '<span class="status-pill p-break">em almoço</span>';
-    else if(lastType==='saida') pill = '<span class="status-pill p-done">encerrado</span>';
-    else pill = '<span class="status-pill p-working">trabalhando</span>';
-    const intervalo = byType.inicio_intervalo ? (fmtTime(byType.inicio_intervalo)+'–'+(byType.fim_intervalo?fmtTime(byType.fim_intervalo):'...')) : '—';
-    return `<tr>
-      <td>${name}</td>
-      <td class="mono">${byType.entrada?fmtTime(byType.entrada):'—'}</td>
-      <td class="mono">${intervalo}</td>
-      <td class="mono">${byType.saida?fmtTime(byType.saida):'—'}</td>
-      <td class="mono">${fmtHours(worked)}</td>
-      <td>${pill}</td>
-    </tr>`;
-  }).join('');
 }
 
 async function renderAdmin(){

@@ -6,6 +6,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <style>
   :root{
@@ -39,8 +40,6 @@
   header .clock{font-size:20px;font-weight:500;}
   header .who{font-size:13px;color:#B9C2C0;cursor:pointer;text-decoration:underline;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;}
-  .grid{display:grid;grid-template-columns:280px 1fr;gap:20px;}
-  @media(max-width:760px){.grid{grid-template-columns:1fr;}}
   .punch-zone{display:flex;flex-direction:column;align-items:center;text-align:center;gap:16px;}
   .punch-btn{
     width:180px;height:180px;border-radius:50%;border:6px solid var(--teal-dark);
@@ -76,20 +75,25 @@
   select,input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:10px;background:#fff;}
   .btn{width:100%;padding:11px;border-radius:8px;border:none;background:var(--teal);color:#fff;font-weight:600;font-size:14px;cursor:pointer;}
   .btn:hover{background:var(--teal-dark);}
+  .btn:disabled{opacity:.6;cursor:default;}
+  .btn.secondary{background:var(--card);color:var(--ink);border:1px solid var(--line);}
   .divider{color:var(--muted);font-size:12px;margin:16px 0;}
   .hint{font-size:12px;color:var(--muted);margin-top:16px;}
   .empty{color:var(--muted);font-size:13px;padding:16px 0;text-align:center;}
   .admin-link{font-size:13px;color:#B9C2C0;cursor:pointer;text-decoration:underline;}
   .row-actions{display:flex;gap:12px;align-items:center;}
-  .icon-btn{background:none;border:none;color:var(--rust);cursor:pointer;font-size:15px;padding:0;font-family:inherit;line-height:1;vertical-align:middle;}
-  .icon-btn.text{font-size:13px;text-decoration:underline;}
+  .icon-btn{background:none;border:none;color:var(--rust);cursor:pointer;font-size:13px;padding:0;font-family:inherit;line-height:1;vertical-align:middle;text-decoration:underline;}
   .icon-btn.neutral{color:var(--muted);}
   .admin-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
   .inline-form{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
-  .inline-form input{margin-bottom:0;flex:1;min-width:140px;}
+  .inline-form input, .inline-form select{margin-bottom:0;flex:1;min-width:140px;}
   .inline-form button{width:auto;padding:10px 16px;white-space:nowrap;}
   .admin-section{margin-bottom:28px;}
   .err{color:var(--rust);font-size:13px;margin:-4px 0 12px;min-height:16px;}
+  .void-note{color:var(--rust);font-style:italic;font-size:12px;}
+  .corr-note{color:var(--amber-dark);font-size:11px;}
+  .export-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .export-row button{width:auto;}
 </style>
 </head>
 <body>
@@ -97,8 +101,6 @@
 
 <script>
 // ===== CONFIGURAÇÃO DO FIREBASE =====
-// Cole aqui o objeto de configuração do seu projeto Firebase
-// (Console do Firebase > Configurações do projeto > Seus apps > Config)
 const firebaseConfig = {
   apiKey: "AIzaSyDvxIf-aLIVVIbTiEcd1MIU7LMZYtKhYXE",
   authDomain: "registro-de-ponto-2a062.firebaseapp.com",
@@ -108,10 +110,13 @@ const firebaseConfig = {
   appId: "1:962067504394:web:62017a50a9208a255aeef3"
 };
 firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
 const db = firebase.firestore();
+auth.setPersistence(firebase.auth.Auth.Persistence.NONE).catch(e=>console.error(e));
 // ===== FIM DA CONFIGURAÇÃO =====
 
 const app = document.getElementById('app');
+const ADMIN_NAMES = ['Marcela Avelar', 'Laryssa Fulgêncio'];
 
 const TYPES = {
   entrada: 'Entrada',
@@ -130,41 +135,113 @@ function fmtTime(iso){ return new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-
 function fmtClock(){ return new Date().toLocaleTimeString('pt-BR'); }
 function fmtDatePretty(){ return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}); }
 
-async function getRoster(){
-  try{ const snap = await db.collection('config').doc('roster').get(); return snap.exists ? (snap.data().list||[]) : []; }
-  catch(e){ console.error(e); return []; }
+// ===== IDENTIDADE / AUTENTICAÇÃO =====
+function slugify(str){
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,'.').replace(/[^a-z0-9.]/g,'');
 }
-async function saveRoster(list){ try{ await db.collection('config').doc('roster').set({ list }); }catch(e){ console.error(e); } }
-function rosterNames(roster){ return roster.map(r=>r.name); }
-async function getPunches(dateKey){
-  try{ const snap = await db.collection('punches').doc(dateKey).get(); return snap.exists ? (snap.data().entries||[]) : []; }
-  catch(e){ console.error(e); return []; }
+function emailFor(name){ return slugify(name)+'@ponto-equipe.local'; }
+function pinToPassword(pin){ return 'pt-'+pin; }
+
+function getSecondaryAuth(){
+  let secApp;
+  try{ secApp = firebase.app('Secondary'); }
+  catch(e){ secApp = firebase.initializeApp(firebaseConfig, 'Secondary'); }
+  return secApp.auth();
 }
-async function savePunches(dateKey, list){ try{ await db.collection('punches').doc(dateKey).set({ entries: list }); }catch(e){ console.error(e); } }
-let currentUser = null;
+
+let currentUser = null; // nome de exibição da pessoa autenticada nesta sessão
 function getMyName(){ return currentUser; }
 function setMyName(name){ currentUser = name; }
 
+async function getEmployees(){
+  try{
+    const snap = await db.collection('employees').where('active','==',true).get();
+    return snap.docs.map(d=>({ uid:d.id, name:d.data().name })).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  }catch(e){ console.error(e); return []; }
+}
+async function addEmployee(name, pin){
+  const email = emailFor(name);
+  const auth2 = getSecondaryAuth();
+  const cred = await auth2.createUserWithEmailAndPassword(email, pinToPassword(pin));
+  const uid = cred.user.uid;
+  try{ await auth2.signOut(); }catch(e){}
+  await db.collection('employees').doc(uid).set({ name, active:true });
+  return uid;
+}
+async function deactivateEmployee(uid){
+  await db.collection('employees').doc(uid).set({ active:false }, { merge:true });
+}
+async function signInEmployee(name, pin){
+  await auth.signInWithEmailAndPassword(emailFor(name), pinToPassword(pin));
+}
+
+async function adminHasAccount(name){
+  try{
+    const methods = await auth.fetchSignInMethodsForEmail(emailFor(name));
+    return methods && methods.length>0;
+  }catch(e){ console.error(e); return false; }
+}
+async function createAdminAccount(name, pin){
+  const cred = await auth.createUserWithEmailAndPassword(emailFor(name), pinToPassword(pin));
+  await db.collection('admins').doc(cred.user.uid).set({ name });
+  return cred.user;
+}
+async function signInAdmin(name, pin){
+  await auth.signInWithEmailAndPassword(emailFor(name), pinToPassword(pin));
+}
+
+// ===== REGISTROS DE PONTO =====
+async function getPunches(dateKey){
+  try{
+    const snap = await db.collection('punches').doc(dateKey).collection('entries').orderBy('time').get();
+    return snap.docs.map(d=>{
+      const v = d.data();
+      return {
+        id: d.id,
+        name: v.name,
+        uid: v.uid || null,
+        type: v.type,
+        time: (v.time && v.time.toDate) ? v.time.toDate().toISOString() : v.time,
+        void: !!v.void,
+        voidReason: v.voidReason || null,
+        addedByAdmin: !!v.addedByAdmin,
+        reason: v.reason || null
+      };
+    });
+  }catch(e){ console.error(e); return []; }
+}
+async function addOwnPunch(dateKey, name, type){
+  await db.collection('punches').doc(dateKey).collection('entries').add({
+    name, uid: auth.currentUser.uid, type,
+    time: firebase.firestore.FieldValue.serverTimestamp(),
+    void: false
+  });
+}
+async function addAdminCorrection(dateKey, name, uid, type, isoTime, reason){
+  await db.collection('punches').doc(dateKey).collection('entries').add({
+    name, uid: uid || null, type,
+    time: firebase.firestore.Timestamp.fromDate(new Date(isoTime)),
+    void: false,
+    addedByAdmin: true,
+    reason: reason || ''
+  });
+}
+async function voidEntry(dateKey, entryId, reason){
+  await db.collection('punches').doc(dateKey).collection('entries').doc(entryId).update({
+    void: true,
+    voidReason: reason || '',
+    voidedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
 async function listPunchDates(){
   try{
-    const snap = await db.collection('punches').get();
-    const dates = snap.docs.map(d=>d.id);
+    const snap = await db.collectionGroup('entries').get();
+    const set = new Set();
+    snap.docs.forEach(d=>{ set.add(d.ref.parent.parent.id); });
+    const dates = [...set];
     dates.sort((a,b)=> b.localeCompare(a));
     return dates;
   }catch(e){ console.error(e); return []; }
-}
-
-const ADMIN_NAMES = ['Marcela Avelar', 'Laryssa Fulgêncio'];
-
-async function getAdminPins(){
-  try{ const snap = await db.collection('config').doc('admin_pins').get(); return snap.exists ? (snap.data().pins||{}) : {}; }
-  catch(e){ console.error(e); return {}; }
-}
-async function saveAdminPins(map){ try{ await db.collection('config').doc('admin_pins').set({ pins: map }); }catch(e){ console.error(e); } }
-
-function onlyDigits(v){ return (v||'').replace(/\D/g,''); }
-function wirePinOnly(input){
-  input.addEventListener('input', ()=>{ input.value = onlyDigits(input.value).slice(0,4); });
 }
 
 function hoursBetween(startIso, endIso){ return (new Date(endIso) - new Date(startIso)) / 3600000; }
@@ -174,9 +251,8 @@ function fmtHours(h){
   const mm = Math.round((h-hh)*60);
   return hh+'h'+String(mm).padStart(2,'0');
 }
-
 function computeStatus(punches, name){
-  const mine = punches.filter(p=>p.name===name).sort((a,b)=>new Date(a.time)-new Date(b.time));
+  const mine = punches.filter(p=>p.name===name && !p.void).sort((a,b)=>new Date(a.time)-new Date(b.time));
   const last = mine.length ? mine[mine.length-1] : null;
   return { mine, lastType: last ? last.type : 'none' };
 }
@@ -194,11 +270,35 @@ function computeWorked(mine){
   return total;
 }
 
+// ===== EXPORTAÇÃO CSV =====
+function downloadCSV(filename, rows){
+  const csv = rows.map(r=>r.map(c=>'"'+String(c==null?'':c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function exportMonthlySummaryCSV(monthKey, totals){
+  const rows = [['Colaborador','Total de horas (mês '+monthKey+')']];
+  Object.keys(totals).sort((a,b)=>totals[b]-totals[a]).forEach(n=> rows.push([n, fmtHours(totals[n])]));
+  downloadCSV('resumo-mensal-'+monthKey+'.csv', rows);
+}
+function exportDetailedCSV(monthKey, allPunches){
+  const rows = [['Data','Colaborador','Tipo','Horário','Status','Observação']];
+  Object.keys(allPunches).filter(d=>d.startsWith(monthKey)).sort().forEach(d=>{
+    allPunches[d].forEach(p=>{
+      const status = p.void ? 'Anulado' : (p.addedByAdmin ? 'Correção manual' : 'Normal');
+      rows.push([d, p.name, TYPES[p.type]||p.type, fmtTime(p.time), status, p.voidReason||p.reason||'']);
+    });
+  });
+  downloadCSV('registros-detalhados-'+monthKey+'.csv', rows);
+}
+
+// ===== TELA INICIAL (LOGIN) =====
 async function renderStartScreen(startTab){
   const tab = startTab || 'colab';
-  const roster = await getRoster();
-  const names = rosterNames(roster);
-
   app.innerHTML = `
     <div class="id-screen">
       <h1>Ponto da equipe</h1>
@@ -207,7 +307,7 @@ async function renderStartScreen(startTab){
         <button class="btn" id="tabColab" style="width:auto;background:${tab==='colab'?'var(--teal)':'var(--card)'};color:${tab==='colab'?'#fff':'var(--ink)'};border:1px solid var(--line);">Colaborador</button>
         <button class="btn" id="tabAdmin" style="width:auto;background:${tab==='admin'?'var(--teal)':'var(--card)'};color:${tab==='admin'?'#fff':'var(--ink)'};border:1px solid var(--line);">Administrador</button>
       </div>
-      <div id="tabBody"></div>
+      <div id="tabBody"><div class="empty">Carregando…</div></div>
     </div>
   `;
   document.getElementById('tabColab').onclick = ()=> renderStartScreen('colab');
@@ -216,14 +316,15 @@ async function renderStartScreen(startTab){
   const body = document.getElementById('tabBody');
 
   if(tab === 'colab'){
-    if(!names.length){
+    const employees = await getEmployees();
+    if(!employees.length){
       body.innerHTML = `<div class="empty">Nenhum colaborador cadastrado ainda. Peça para um administrador te cadastrar no painel admin.</div>`;
       return;
     }
     body.innerHTML = `
       <select id="colabName">
         <option value="">Selecione seu nome</option>
-        ${names.map(n=>`<option value="${n}">${n}</option>`).join('')}
+        ${employees.map(e=>`<option value="${e.name}">${e.name}</option>`).join('')}
       </select>
       <input id="colabPin" type="password" placeholder="Sua senha de 4 dígitos" maxlength="4" inputmode="numeric">
       <div class="err" id="colabErr"></div>
@@ -235,16 +336,20 @@ async function renderStartScreen(startTab){
       const pin = document.getElementById('colabPin').value;
       const errEl = document.getElementById('colabErr');
       if(!name){ errEl.textContent = 'Selecione seu nome.'; return; }
-      const fresh = await getRoster();
-      const match = fresh.find(r=>r.name===name && r.pin===pin);
-      if(!match){ errEl.textContent = 'Senha incorreta.'; return; }
-      await setMyName(name);
-      renderMain();
+      const btnEl = document.getElementById('doColabLogin');
+      btnEl.disabled = true; btnEl.textContent = 'Entrando…';
+      try{
+        await signInEmployee(name, pin);
+        setMyName(name);
+        renderMain();
+      }catch(e){
+        errEl.textContent = 'Senha incorreta.';
+        btnEl.disabled = false; btnEl.textContent = 'Entrar';
+      }
     };
     return;
   }
 
-  const pins = await getAdminPins();
   body.innerHTML = `
     <select id="adminName">
       <option value="">Selecione seu nome</option>
@@ -252,14 +357,18 @@ async function renderStartScreen(startTab){
     </select>
     <div id="adminPinArea"></div>
     <div class="err" id="adminErr"></div>
-    <button class="btn" id="doAdminLogin" style="background:var(--ink);">Entrar</button>
+    <button class="btn" id="doAdminLogin" style="background:var(--ink);" disabled>Selecione seu nome</button>
   `;
   const adminNameSel = document.getElementById('adminName');
-  function renderPinArea(){
+  const submitBtn = document.getElementById('doAdminLogin');
+
+  async function renderPinArea(){
     const name = adminNameSel.value;
     const pinArea = document.getElementById('adminPinArea');
-    if(!name){ pinArea.innerHTML = ''; return; }
-    if(!pins[name]){
+    if(!name){ pinArea.innerHTML = ''; submitBtn.disabled = true; submitBtn.textContent='Selecione seu nome'; return; }
+    pinArea.innerHTML = `<div class="empty">Verificando…</div>`;
+    const hasAccount = await adminHasAccount(name);
+    if(!hasAccount){
       pinArea.innerHTML = `
         <p class="hint" style="margin:0 0 10px;">Primeiro acesso de ${name}: crie uma senha de 4 dígitos.</p>
         <input id="adminPinNew" type="password" placeholder="Crie uma senha de 4 dígitos" maxlength="4" inputmode="numeric">
@@ -267,33 +376,54 @@ async function renderStartScreen(startTab){
       `;
       wirePinOnly(document.getElementById('adminPinNew'));
       wirePinOnly(document.getElementById('adminPinNew2'));
+      submitBtn.textContent = 'Criar senha e entrar';
     } else {
       pinArea.innerHTML = `<input id="adminPinLogin" type="password" placeholder="Senha de 4 dígitos" maxlength="4" inputmode="numeric">`;
       wirePinOnly(document.getElementById('adminPinLogin'));
+      submitBtn.textContent = 'Entrar';
     }
+    submitBtn.disabled = false;
   }
   adminNameSel.onchange = renderPinArea;
-  document.getElementById('doAdminLogin').onclick = async ()=>{
+
+  submitBtn.onclick = async ()=>{
     const name = adminNameSel.value;
     const errEl = document.getElementById('adminErr');
     if(!name){ errEl.textContent = 'Selecione seu nome.'; return; }
-    const freshPins = await getAdminPins();
-    if(!freshPins[name]){
+    submitBtn.disabled = true;
+    const hasAccount = await adminHasAccount(name);
+    if(!hasAccount){
       const p1 = document.getElementById('adminPinNew').value;
       const p2 = document.getElementById('adminPinNew2').value;
-      if(p1.length!==4){ errEl.textContent = 'A senha precisa ter 4 dígitos.'; return; }
-      if(p1!==p2){ errEl.textContent = 'As senhas não coincidem.'; return; }
-      freshPins[name] = p1;
-      await saveAdminPins(freshPins);
-      renderAdmin();
+      if(p1.length!==4){ errEl.textContent = 'A senha precisa ter 4 dígitos.'; submitBtn.disabled=false; return; }
+      if(p1!==p2){ errEl.textContent = 'As senhas não coincidem.'; submitBtn.disabled=false; return; }
+      try{
+        await createAdminAccount(name, p1);
+        renderAdmin();
+      }catch(e){
+        console.error(e);
+        errEl.textContent = 'Não foi possível criar a senha. Tente novamente.';
+        submitBtn.disabled = false;
+      }
       return;
     }
     const pin = document.getElementById('adminPinLogin').value;
-    if(freshPins[name] !== pin){ errEl.textContent = 'Senha incorreta.'; return; }
-    renderAdmin();
+    try{
+      await signInAdmin(name, pin);
+      renderAdmin();
+    }catch(e){
+      errEl.textContent = 'Senha incorreta.';
+      submitBtn.disabled = false;
+    }
   };
 }
 
+function onlyDigits(v){ return (v||'').replace(/\D/g,''); }
+function wirePinOnly(input){
+  input.addEventListener('input', ()=>{ input.value = onlyDigits(input.value).slice(0,4); });
+}
+
+// ===== TELA DO COLABORADOR =====
 async function renderMain(){
   const myName = getMyName();
   if(!myName){ renderStartScreen('colab'); return; }
@@ -331,7 +461,8 @@ async function renderMain(){
     </div>
   `;
 
-  document.getElementById('switchId').onclick = ()=>{
+  document.getElementById('switchId').onclick = async ()=>{
+    try{ await auth.signOut(); }catch(e){}
     setMyName(null);
     renderStartScreen('colab');
   };
@@ -342,11 +473,15 @@ async function renderMain(){
   if(btn){
     btn.onclick = async ()=>{
       btn.disabled = true;
-      const entry = { name: myName, type: nextAction, time: new Date().toISOString() };
-      const fresh = await getPunches(dateKey);
-      fresh.push(entry);
-      await savePunches(dateKey, fresh);
-      document.getElementById('stampMsg').textContent = TYPES[nextAction]+' registrada às '+fmtTime(entry.time);
+      try{
+        await addOwnPunch(dateKey, myName, nextAction);
+        document.getElementById('stampMsg').textContent = TYPES[nextAction]+' registrada agora.';
+      }catch(e){
+        console.error(e);
+        document.getElementById('stampMsg').textContent = 'Não foi possível registrar. Tente novamente.';
+        btn.disabled = false;
+        return;
+      }
       renderMain();
     };
   }
@@ -358,12 +493,10 @@ async function renderMain(){
   }, 1000);
 }
 
+// ===== PAINEL ADMIN =====
 async function renderAdmin(){
   clearInterval(window.__clockTimer);
-  clearInterval(window.__refreshTimer);
-  const roster = await getRoster();
-  const names = rosterNames(roster);
-  const adminPins = await getAdminPins();
+  const employees = await getEmployees();
   let dates = await listPunchDates();
   const today = todayKey();
   if(!dates.includes(today)) dates = [today, ...dates];
@@ -379,15 +512,16 @@ async function renderAdmin(){
   }
 
   const currentMonth = today.slice(0,7);
+  const employeeNames = employees.map(e=>e.name);
 
   function monthlyTotals(monthKey){
     const totals = {};
-    names.forEach(n=>totals[n]=0);
+    employeeNames.forEach(n=>totals[n]=0);
     Object.keys(allPunches).forEach(d=>{
       if(!d.startsWith(monthKey)) return;
       const punches = allPunches[d];
-      const names = [...new Set(punches.map(p=>p.name))];
-      names.forEach(name=>{
+      const namesInDay = [...new Set(punches.map(p=>p.name))];
+      namesInDay.forEach(name=>{
         const st = computeStatus(punches, name);
         const worked = computeWorked(st.mine);
         if(worked && !isNaN(worked) && worked>0){
@@ -397,7 +531,6 @@ async function renderAdmin(){
     });
     return totals;
   }
-
   function renderMonthlyRows(monthKey){
     const totals = monthlyTotals(monthKey);
     const names = Object.keys(totals).sort((a,b)=> totals[b]-totals[a]);
@@ -417,28 +550,66 @@ async function renderAdmin(){
       <div class="inline-form">
         <input type="month" id="monthPicker" value="${currentMonth}" style="max-width:200px;">
       </div>
+      <div class="export-row">
+        <button class="btn secondary" id="exportSummary">Exportar resumo (CSV)</button>
+        <button class="btn secondary" id="exportDetailed">Exportar registros detalhados do mês (CSV)</button>
+      </div>
       <table>
         <thead><tr><th>Colaborador</th><th class="mono">Total de horas</th></tr></thead>
         <tbody id="monthlyBody">${renderMonthlyRows(currentMonth)}</tbody>
       </table>
-      <p class="hint">Soma automática das horas trabalhadas (descontando o almoço) em todos os dias do mês selecionado. Dias em andamento contam até o horário atual.</p>
+      <p class="hint">Soma automática das horas trabalhadas (descontando o almoço) em todos os dias do mês selecionado. Registros anulados não entram na soma. Dias em andamento contam até o horário atual.</p>
+    </div>
+
+    <div class="card admin-section">
+      <p class="section-title">Adicionar registro manual (correção)</p>
+      <p class="hint" style="margin-top:-6px;">Use quando um colaborador esqueceu de bater um ponto. Isso não apaga nada — cria um novo registro com o motivo explicado.</p>
+      <div class="inline-form">
+        <select id="corrName">
+          <option value="">Colaborador</option>
+          ${employees.map(e=>`<option value="${e.name}" data-uid="${e.uid}">${e.name}</option>`).join('')}
+        </select>
+        <select id="corrType">
+          <option value="entrada">Entrada</option>
+          <option value="inicio_intervalo">Início do almoço</option>
+          <option value="fim_intervalo">Fim do almoço</option>
+          <option value="saida">Saída</option>
+        </select>
+        <input type="date" id="corrDate" value="${today}">
+        <input type="time" id="corrTime">
+      </div>
+      <div class="inline-form">
+        <input id="corrReason" placeholder="Motivo da correção (obrigatório)">
+        <button class="btn" id="corrSave">Adicionar</button>
+      </div>
+      <div class="err" id="corrErr"></div>
     </div>
 
     <div class="card admin-section">
       <p class="section-title">Todos os registros, por dia</p>
-      <p class="hint" style="margin:-4px 0 16px;">Os horários são gravados automaticamente no momento em que a pessoa bate o ponto. Nenhum colaborador pode digitar ou alterar data e horário — só o administrador pode excluir um registro aqui.</p>
+      <p class="hint" style="margin:-4px 0 16px;">Os horários dos colaboradores são gravados automaticamente no momento em que a pessoa bate o ponto e não podem ser editados. Nenhum registro pode ser apagado — o administrador só pode anular com um motivo, mantendo o histórico completo.</p>
       ${dates.map((d,i)=>{
         const dayPunches = allPunches[d]||[];
         const byName = {};
-        dayPunches.forEach((p,idx)=>{
+        dayPunches.forEach(p=>{
           if(!byName[p.name]) byName[p.name] = {};
-          byName[p.name][p.type] = { time:p.time, idx };
+          if(!byName[p.name][p.type] || (byName[p.name][p.type].void && !p.void)){
+            byName[p.name][p.type] = p;
+          }
         });
         const names = Object.keys(byName).sort((a,b)=>a.localeCompare(b,'pt-BR'));
         function cell(name, type){
-          const entry = byName[name][type];
-          if(!entry) return '<td class="mono">—</td>';
-          return '<td class="mono">'+fmtTime(entry.time)+' <button class="icon-btn" data-date="'+d+'" data-idx="'+entry.idx+'" title="Excluir registro">×</button></td>';
+          const p = byName[name][type];
+          if(!p) return '<td class="mono">—</td>';
+          let extra = '';
+          if(p.void){
+            extra = '<div class="void-note">anulado: '+(p.voidReason||'')+'</div>';
+          } else {
+            extra = '<button class="icon-btn" data-date="'+d+'" data-id="'+p.id+'" data-action="void">anular</button>';
+            if(p.addedByAdmin) extra = '<div class="corr-note">correção: '+(p.reason||'')+'</div>' + extra;
+          }
+          const timeDisplay = p.void ? '<s>'+fmtTime(p.time)+'</s>' : fmtTime(p.time);
+          return '<td class="mono">'+timeDisplay+'<br>'+extra+'</td>';
         }
         return '<details '+(i===0?'open':'')+' style="margin-bottom:10px;border:1px solid var(--line);border-radius:10px;padding:4px 14px;">'+
           '<summary style="cursor:pointer;padding:10px 0;font-weight:500;text-transform:capitalize;">'+dayLabel(d)+' <span style="color:var(--muted);font-weight:400;text-transform:none;">· '+names.length+' colaborador'+(names.length===1?'':'es')+'</span></summary>'+
@@ -452,10 +623,10 @@ async function renderAdmin(){
 
     <div class="card admin-section">
       <p class="section-title">Equipe cadastrada</p>
-      ${roster.length ? roster.map(r=>`
+      ${employees.length ? employees.map(e=>`
         <div class="row-actions" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);">
-          <span>${r.name}</span>
-          <button class="icon-btn text" data-remove="${r.name}">Remover</button>
+          <span>${e.name}</span>
+          <button class="icon-btn" data-remove="${e.uid}">Remover</button>
         </div>
       `).join('') : `<div class="empty">Ninguém cadastrado ainda.</div>`}
       <div class="inline-form" style="margin-top:14px;">
@@ -464,44 +635,58 @@ async function renderAdmin(){
         <button class="btn" id="addMember">Adicionar</button>
       </div>
       <div class="err" id="memberErr"></div>
-      <p class="hint">Só o administrador cadastra colaboradores aqui. Cada pessoa usa seu nome e essa senha para bater ponto.</p>
+      <p class="hint">Só o administrador cadastra colaboradores aqui. Cada pessoa usa seu nome e essa senha para bater ponto. Remover alguém desativa o acesso, mas mantém o histórico de ponto dessa pessoa.</p>
     </div>
 
     <div class="card admin-section">
       <p class="section-title">Administradores</p>
-      ${ADMIN_NAMES.map(n=>`
-        <div class="row-actions" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);">
-          <span>${n}</span>
-          <span style="color:var(--muted);font-size:12px;">${adminPins[n] ? 'senha definida' : 'ainda sem senha (definida no primeiro acesso)'}</span>
-        </div>
-      `).join('')}
-      <p class="hint">O acesso ao painel admin é limitado a Marcela Avelar e Laryssa Fulgêncio. Não é possível adicionar outros administradores.</p>
+      <div id="adminStatusList"><div class="empty">Verificando…</div></div>
+      <p class="hint">O acesso ao painel admin é limitado a Marcela Avelar e Laryssa Fulgêncio, garantido pelas regras do banco de dados — não é possível adicionar outros administradores.</p>
     </div>
   `;
 
-  document.getElementById('backBtn').onclick = renderMain;
+  (async ()=>{
+    const rows = [];
+    for(const n of ADMIN_NAMES){
+      const has = await adminHasAccount(n);
+      rows.push('<div class="row-actions" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);"><span>'+n+'</span><span style="color:var(--muted);font-size:12px;">'+(has?'senha definida':'ainda sem senha')+'</span></div>');
+    }
+    const el = document.getElementById('adminStatusList');
+    if(el) el.innerHTML = rows.join('');
+  })();
+
+  document.getElementById('backBtn').onclick = async ()=>{
+    try{ await auth.signOut(); }catch(e){}
+    setMyName(null);
+    renderStartScreen('colab');
+  };
 
   document.getElementById('monthPicker').oninput = (e)=>{
     document.getElementById('monthlyBody').innerHTML = renderMonthlyRows(e.target.value);
   };
+  document.getElementById('exportSummary').onclick = ()=>{
+    const mk = document.getElementById('monthPicker').value;
+    exportMonthlySummaryCSV(mk, monthlyTotals(mk));
+  };
+  document.getElementById('exportDetailed').onclick = ()=>{
+    const mk = document.getElementById('monthPicker').value;
+    exportDetailedCSV(mk, allPunches);
+  };
 
-  document.querySelectorAll('button[data-idx]').forEach(b=>{
+  document.querySelectorAll('button[data-action="void"]').forEach(b=>{
     b.onclick = async ()=>{
-      const d = b.dataset.date;
-      const idx = Number(b.dataset.idx);
-      const fresh = await getPunches(d);
-      fresh.splice(idx,1);
-      await savePunches(d, fresh);
+      const reason = window.prompt('Motivo da anulação deste registro:');
+      if(reason === null) return;
+      if(!reason.trim()){ alert('Informe um motivo para anular o registro.'); return; }
+      await voidEntry(b.dataset.date, b.dataset.id, reason.trim());
       renderAdmin();
     };
   });
 
   document.querySelectorAll('button[data-remove]').forEach(b=>{
     b.onclick = async ()=>{
-      const name = b.dataset.remove;
-      if(!confirm('Remover '+name+' da equipe? O histórico de ponto dessa pessoa não será apagado.')) return;
-      const list = (await getRoster()).filter(r=>r.name!==name);
-      await saveRoster(list);
+      if(!confirm('Remover o acesso dessa pessoa? O histórico de ponto será mantido.')) return;
+      await deactivateEmployee(b.dataset.remove);
       renderAdmin();
     };
   });
@@ -511,12 +696,34 @@ async function renderAdmin(){
     const val = document.getElementById('newMember').value.trim();
     const pin = document.getElementById('newMemberPin').value;
     const errEl = document.getElementById('memberErr');
+    const btnEl = document.getElementById('addMember');
     if(!val){ errEl.textContent = 'Digite o nome.'; return; }
     if(pin.length!==4){ errEl.textContent = 'A senha precisa ter 4 dígitos.'; return; }
-    const list = await getRoster();
-    if(list.some(r=>r.name===val)){ errEl.textContent = 'Esse nome já está cadastrado.'; return; }
-    list.push({ name: val, pin });
-    await saveRoster(list);
+    btnEl.disabled = true; btnEl.textContent = 'Adicionando…';
+    try{
+      await addEmployee(val, pin);
+      renderAdmin();
+    }catch(e){
+      console.error(e);
+      errEl.textContent = (e.code==='auth/email-already-in-use') ? 'Já existe alguém cadastrado com esse nome.' : 'Não foi possível cadastrar. Tente novamente.';
+      btnEl.disabled = false; btnEl.textContent = 'Adicionar';
+    }
+  };
+
+  document.getElementById('corrSave').onclick = async ()=>{
+    const sel = document.getElementById('corrName');
+    const name = sel.value;
+    const uid = sel.selectedOptions[0] ? sel.selectedOptions[0].dataset.uid : null;
+    const type = document.getElementById('corrType').value;
+    const date = document.getElementById('corrDate').value;
+    const time = document.getElementById('corrTime').value;
+    const reason = document.getElementById('corrReason').value.trim();
+    const errEl = document.getElementById('corrErr');
+    if(!name){ errEl.textContent = 'Selecione o colaborador.'; return; }
+    if(!date || !time){ errEl.textContent = 'Informe data e horário.'; return; }
+    if(!reason){ errEl.textContent = 'Informe o motivo da correção.'; return; }
+    const isoTime = new Date(date+'T'+time+':00').toISOString();
+    await addAdminCorrection(date, name, uid, type, isoTime, reason);
     renderAdmin();
   };
 }

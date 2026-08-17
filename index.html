@@ -4,22 +4,26 @@
 <meta charset="UTF-8">
 <title>Ponto da equipe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <style>
   :root{
-    --ink:#1C2430;
-    --bg:#EEF2F1;
-    --card:#FFFFFF;
-    --teal:#0E6E5D;
-    --teal-dark:#0A5346;
-    --amber:#E8A33D;
-    --amber-dark:#B87A22;
-    --rust:#C1502E;
-    --line:#DCE3E1;
-    --muted:#6B7680;
+    --ink:#2B2B2B;          /* grafite do logotipo IBGP */
+    --bg:#F3F1EC;           /* fundo claro, neutro quente */
+    --card:#FFFFFF;         /* papel do cartão de ponto */
+    --card-line:#E6E2D8;    /* linhas de pauta do cartão */
+    --paper-text:#2B2B2B;   /* texto sobre o cartão */
+    --teal:#B23A2E;         /* vermelho IBGP — cor de ação principal */
+    --teal-dark:#8A2A20;    /* vermelho escurecido — sombra/hover */
+    --amber:#B23A2E;
+    --amber-dark:#8A2A20;
+    --rust:#8A2A20;
+    --stamp-green:#3C5A44;  /* verde tinta — confirmações */
+    --line:#E6E2D8;
+    --muted:#8A857A;
+    --text-on-dark:#F3F1EC;
   }
   *{box-sizing:border-box;}
   body{
@@ -30,57 +34,78 @@
     min-height:100vh;
   }
   .mono{font-family:'IBM Plex Mono',monospace;}
+  .stamp-font{font-family:'Special Elite',monospace;}
   .wrap{max-width:980px;margin:0 auto;padding:24px 20px 60px;}
   header{
     display:flex;justify-content:space-between;align-items:center;
-    padding:14px 20px;background:var(--ink);color:#fff;border-radius:12px;
-    margin-bottom:24px;flex-wrap:wrap;gap:10px;
+    padding:14px 22px;background:var(--ink);color:var(--text-on-dark);
+    border-radius:6px;margin-bottom:24px;flex-wrap:wrap;gap:12px;
+    box-shadow:0 6px 18px rgba(0,0,0,.12);
   }
-  header .brand{font-weight:600;letter-spacing:.04em;font-size:14px;text-transform:uppercase;}
-  header .clock{font-size:20px;font-weight:500;}
-  header .who{font-size:13px;color:#B9C2C0;cursor:pointer;text-decoration:underline;}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;}
+  header .brand{
+    display:flex;align-items:center;gap:10px;
+    font-family:'Special Elite',monospace;letter-spacing:.04em;font-size:14px;
+    text-transform:uppercase;color:var(--text-on-dark);
+  }
+  header .brand img{height:28px;width:auto;display:block;}
+  header .clock{font-family:'Special Elite',monospace;font-size:20px;letter-spacing:.02em;}
+  header .who{font-size:13px;color:#C9C4B8;cursor:pointer;text-decoration:underline;}
+
+  /* Cartão de ponto: papel com borda perfurada no topo */
+  .card{
+    background:var(--card);color:var(--paper-text);
+    border:1px solid var(--card-line);border-radius:6px;
+    padding:26px 22px 22px;position:relative;
+    box-shadow:0 6px 18px rgba(43,43,43,.08);
+  }
+  .card::before{
+    content:"";position:absolute;top:0;left:16px;right:16px;height:10px;
+    background-image:radial-gradient(circle, var(--bg) 3.5px, transparent 3.6px);
+    background-size:18px 10px;background-repeat:repeat-x;background-position:top center;
+  }
   .punch-zone{display:flex;flex-direction:column;align-items:center;text-align:center;gap:16px;}
   .punch-btn{
-    width:180px;height:180px;border-radius:50%;border:6px solid var(--teal-dark);
-    background:var(--teal);color:#fff;font-family:'IBM Plex Mono',monospace;
-    font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;
+    width:170px;height:170px;border-radius:50%;border:5px solid var(--teal-dark);
+    background:linear-gradient(180deg, #C24638, var(--teal));
+    color:#FFF3EE;font-family:'Special Elite',monospace;
+    font-size:14px;font-weight:400;text-transform:uppercase;letter-spacing:.04em;
     cursor:pointer;display:flex;align-items:center;justify-content:center;
-    box-shadow:0 4px 0 var(--teal-dark);transition:transform .08s, box-shadow .08s;
-    padding:10px;
+    box-shadow:0 6px 0 var(--teal-dark), 0 10px 20px rgba(43,43,43,.18);
+    transition:transform .08s, box-shadow .08s;padding:10px;
   }
-  .punch-btn:active{transform:translateY(4px);box-shadow:0 0 0 var(--teal-dark);}
-  .punch-btn.done{background:var(--muted);border-color:#555;box-shadow:0 4px 0 #555;cursor:default;}
-  .punch-btn.saida{background:var(--rust);border-color:#8C3A20;box-shadow:0 4px 0 #8C3A20;}
-  .punch-btn.saida:active{box-shadow:0 0 0 #8C3A20;}
-  .stamp{font-size:13px;color:var(--muted);min-height:18px;}
+  .punch-btn:active{transform:translateY(6px);box-shadow:0 0 0 var(--teal-dark);}
+  .punch-btn.done{background:var(--muted);border-color:#6b6558;box-shadow:0 6px 0 #6b6558;cursor:default;color:#F3F1EC;}
+  .punch-btn.saida{background:linear-gradient(180deg,#7A2318,var(--teal-dark));border-color:#5C1B12;box-shadow:0 6px 0 #5C1B12;color:#FFF3EE;}
+  .punch-btn.saida:active{box-shadow:0 0 0 #5C1B12;}
+  .stamp{font-size:13px;color:var(--muted);min-height:18px;font-style:italic;}
   .timeline{width:100%;text-align:left;margin-top:6px;}
-  .timeline h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;font-weight:600;}
-  .tl-item{display:flex;justify-content:space-between;font-size:14px;padding:7px 0;border-bottom:1px solid var(--line);}
+  .timeline h3{font-family:'Special Elite',monospace;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px;font-weight:400;}
+  .tl-item{display:flex;justify-content:space-between;font-size:14px;padding:8px 0;border-bottom:1px dashed var(--card-line);}
   .tl-item:last-child{border-bottom:none;}
-  .tl-item .time{font-family:'IBM Plex Mono',monospace;color:var(--teal-dark);font-weight:500;}
+  .tl-item .time{font-family:'IBM Plex Mono',monospace;color:var(--stamp-green);font-weight:600;}
   table{width:100%;border-collapse:collapse;font-size:14px;}
-  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 8px;border-bottom:2px solid var(--line);font-weight:600;}
-  td{padding:10px 8px;border-bottom:1px solid var(--line);}
+  th{text-align:left;font-family:'Special Elite',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 8px;border-bottom:2px solid var(--card-line);font-weight:400;}
+  td{padding:10px 8px;border-bottom:1px dashed var(--card-line);}
   td.mono, th.mono{font-family:'IBM Plex Mono',monospace;}
-  .status-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:500;}
-  .p-working{background:#DEEFE9;color:var(--teal-dark);}
-  .p-break{background:#FBEBD3;color:var(--amber-dark);}
-  .p-done{background:#EDEDEA;color:var(--muted);}
-  .p-notstarted{background:#F4E7E2;color:var(--rust);}
-  .section-title{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin:0 0 14px;}
+  .status-pill{display:inline-block;padding:2px 9px;border-radius:3px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;}
+  .p-working{background:#DCE6DD;color:var(--stamp-green);}
+  .p-break{background:#F3DCD6;color:var(--teal-dark);}
+  .p-done{background:#E9E6DC;color:var(--muted);}
+  .p-notstarted{background:#F3D6D1;color:var(--rust);}
+  .section-title{font-family:'Special Elite',monospace;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:400;margin:0 0 14px;}
   .id-screen{max-width:420px;margin:60px auto;text-align:center;}
-  .id-screen h1{font-size:20px;margin-bottom:6px;}
+  .id-screen h1{font-family:'Special Elite',monospace;font-size:24px;margin-bottom:6px;color:var(--ink);letter-spacing:.02em;}
   .id-screen p{color:var(--muted);font-size:14px;margin-bottom:22px;}
-  select,input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:10px;background:#fff;}
-  .btn{width:100%;padding:11px;border-radius:8px;border:none;background:var(--teal);color:#fff;font-weight:600;font-size:14px;cursor:pointer;}
+  select,input{width:100%;padding:10px 12px;border:1px solid var(--card-line);border-radius:4px;font-size:14px;font-family:inherit;margin-bottom:10px;background:#fff;color:var(--paper-text);}
+  .btn{width:100%;padding:11px;border-radius:4px;border:none;background:var(--teal);color:#FFF3EE;font-weight:700;font-size:14px;cursor:pointer;letter-spacing:.02em;}
   .btn:hover{background:var(--teal-dark);}
   .btn:disabled{opacity:.6;cursor:default;}
-  .btn.secondary{background:var(--card);color:var(--ink);border:1px solid var(--line);}
+  .btn.secondary{background:#fff;color:var(--ink);border:1px solid var(--card-line);}
+  .btn.secondary:hover{background:#F3F1EC;}
   .divider{color:var(--muted);font-size:12px;margin:16px 0;}
   .hint{font-size:12px;color:var(--muted);margin-top:16px;}
   .empty{color:var(--muted);font-size:13px;padding:16px 0;text-align:center;}
-  .admin-link{font-size:13px;color:#B9C2C0;cursor:pointer;text-decoration:underline;}
+  .admin-link{font-size:13px;color:#E8A99E;cursor:pointer;text-decoration:underline;}
   .row-actions{display:flex;gap:12px;align-items:center;}
   .icon-btn{background:none;border:none;color:var(--rust);cursor:pointer;font-size:13px;padding:0;font-family:inherit;line-height:1;vertical-align:middle;text-decoration:underline;}
   .icon-btn.neutral{color:var(--muted);}
@@ -436,7 +461,7 @@ async function renderMain(){
 
   app.innerHTML = `
     <header>
-      <div class="brand">Ponto da equipe</div>
+      <div class="brand"><img src="ibgp-logo.png" alt="IBGP"> Ponto da equipe</div>
       <div class="clock mono" id="liveClock">${fmtClock()}</div>
       <div style="display:flex;align-items:center;gap:16px;">
         <div class="admin-link" id="openAdmin">Painel admin</div>
@@ -540,7 +565,7 @@ async function renderAdmin(){
 
   app.innerHTML = `
     <header>
-      <div class="brand">Painel admin</div>
+      <div class="brand"><img src="ibgp-logo.png" alt="IBGP"> Painel admin</div>
       <div class="clock mono">${fmtClock()}</div>
       <div class="admin-link" id="backBtn" style="color:#fff;">Voltar ao ponto</div>
     </header>

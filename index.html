@@ -200,15 +200,25 @@ async function signInEmployee(name, pin){
   await auth.signInWithEmailAndPassword(emailFor(name), pinToPassword(pin));
 }
 
-async function adminHasAccount(name){
+async function getAdminSetupStatus(){
   try{
-    const methods = await auth.fetchSignInMethodsForEmail(emailFor(name));
-    return methods && methods.length>0;
-  }catch(e){ console.error(e); return false; }
+    const snap = await db.collection('meta').doc('admin_setup').get();
+    return snap.exists ? (snap.data()||{}) : {};
+  }catch(e){ console.error(e); return {}; }
+}
+async function markAdminSetupDone(name){
+  try{
+    await db.collection('meta').doc('admin_setup').set({ [slugify(name)]: true }, { merge:true });
+  }catch(e){ console.error(e); }
+}
+async function adminHasAccount(name){
+  const status = await getAdminSetupStatus();
+  return !!status[slugify(name)];
 }
 async function createAdminAccount(name, pin){
   const cred = await auth.createUserWithEmailAndPassword(emailFor(name), pinToPassword(pin));
   await db.collection('admins').doc(cred.user.uid).set({ name });
+  await markAdminSetupDone(name);
   return cred.user;
 }
 async function signInAdmin(name, pin){
@@ -426,6 +436,20 @@ async function renderStartScreen(startTab){
         await createAdminAccount(name, p1);
         renderAdmin();
       }catch(e){
+        if(e.code === 'auth/email-already-in-use'){
+          // Já existe uma conta com esse e-mail (provavelmente de uma tentativa
+          // anterior). Tenta entrar com a senha que a pessoa acabou de digitar.
+          try{
+            await signInAdmin(name, p1);
+            await markAdminSetupDone(name);
+            renderAdmin();
+          }catch(e2){
+            await markAdminSetupDone(name);
+            errEl.textContent = 'Já existe uma senha definida para esse nome e não é a que você digitou. Selecione o nome de novo para tentar entrar com a senha correta.';
+            submitBtn.disabled = false;
+          }
+          return;
+        }
         console.error(e);
         errEl.textContent = 'Não foi possível criar a senha. Tente novamente.';
         submitBtn.disabled = false;
